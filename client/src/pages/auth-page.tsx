@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { LayoutDashboard, UserPlus, LogIn } from "lucide-react";
+import { UserPlus, LogIn } from "lucide-react";
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -46,16 +46,6 @@ export default function AuthPage() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "linear-gradient(135deg, #e0f7fa 0%, #e8f5e9 50%, #f3e5f5 100%)" }}>
       <div className="w-full max-w-md">
-        <div className="text-center mb-8 animate-fade-in">
-          <div className="inline-flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
-              <LayoutDashboard className="w-6 h-6 text-primary-foreground" />
-            </div>
-            <h1 className="text-3xl font-bold text-foreground">ТрелоПародия</h1>
-          </div>
-          <p className="text-muted-foreground">Управляйте задачами легко и весело</p>
-        </div>
-
         <div className="bg-card rounded-xl p-8 shadow-lg border border-card-border animate-slide-up">
           <div className="flex gap-2 mb-6">
             <Button
