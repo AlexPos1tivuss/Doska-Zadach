@@ -4,7 +4,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Notification } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Bell, CheckCheck, Clock, UserPlus2, ClipboardList, Users } from "lucide-react";
+import { Bell, CheckCheck, Clock, UserPlus2, ClipboardList, Users, CircleCheckBig } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 const NOTIFICATION_ICONS: Record<string, typeof Bell> = {
@@ -12,6 +12,7 @@ const NOTIFICATION_ICONS: Record<string, typeof Bell> = {
   board_invite: UserPlus2,
   deadline_warning: Clock,
   board_joined: Users,
+  task_completed: CircleCheckBig,
 };
 
 function formatTimeAgo(date: Date): string {

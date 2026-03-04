@@ -65,8 +65,9 @@ Preferred communication style: Simple, everyday language. All UI in Russian.
 ### Notification Types
 - `task_assigned` — when a task is assigned to a user
 - `board_invite` — when a user is invited to a board
-- `deadline_warning` — for upcoming deadlines
-- `board_joined` — when someone joins a board
+- `deadline_warning` — for upcoming deadlines (checked every 30 min, warns 24h before)
+- `board_joined` — when someone is invited to a board (owner gets notified)
+- `task_completed` — when someone else marks an assigned task as completed
 
 ---
 

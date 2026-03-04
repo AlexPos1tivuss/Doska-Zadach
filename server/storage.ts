@@ -1,4 +1,4 @@
-import { eq, and, asc, desc } from "drizzle-orm";
+import { eq, and, asc, desc, gt, lt, isNotNull } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, boards, boardMembers, lists, cards, checklistItems, notifications,
@@ -44,6 +44,7 @@ export interface IStorage {
   markNotificationRead(id: string): Promise<void>;
   markAllNotificationsRead(userId: string): Promise<void>;
   getUnreadNotificationCount(userId: string): Promise<number>;
+  getCardsWithUpcomingDeadlines(fromDate: Date, toDate: Date): Promise<(Card & { boardId: string; boardTitle: string })[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -286,6 +287,32 @@ export class DatabaseStorage implements IStorage {
       .from(notifications)
       .where(and(eq(notifications.userId, userId), eq(notifications.read, false)));
     return result.length;
+  }
+
+  async getCardsWithUpcomingDeadlines(fromDate: Date, toDate: Date): Promise<(Card & { boardId: string; boardTitle: string })[]> {
+    const allCards = await db
+      .select()
+      .from(cards)
+      .where(
+        and(
+          isNotNull(cards.deadline),
+          gt(cards.deadline, fromDate),
+          lt(cards.deadline, toDate),
+          eq(cards.completed, false)
+        )
+      );
+
+    const result = await Promise.all(
+      allCards.map(async (card) => {
+        const [list] = await db.select().from(lists).where(eq(lists.id, card.listId));
+        if (!list) return null;
+        const [board] = await db.select().from(boards).where(eq(boards.id, list.boardId));
+        if (!board) return null;
+        return { ...card, boardId: board.id, boardTitle: board.title };
+      })
+    );
+
+    return result.filter(Boolean) as (Card & { boardId: string; boardTitle: string })[];
   }
 }
 

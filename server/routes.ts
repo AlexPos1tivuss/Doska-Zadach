@@ -210,6 +210,26 @@ export async function registerRoutes(
       boardId: req.params.id,
     });
 
+    if (board && board.ownerId !== req.user!.id) {
+      await storage.createNotification({
+        userId: board.ownerId,
+        type: "board_joined",
+        title: "Новый участник",
+        message: `${user.displayName} (@${user.username}) присоединился к доске «${board.title}»`,
+        boardId: req.params.id,
+      });
+    }
+
+    if (board && board.ownerId === req.user!.id) {
+      await storage.createNotification({
+        userId: board.ownerId,
+        type: "board_joined",
+        title: "Новый участник",
+        message: `Вы пригласили ${user.displayName} (@${user.username}) на доску «${board.title}»`,
+        boardId: req.params.id,
+      });
+    }
+
     res.json({ ok: true });
   });
 
@@ -309,6 +329,17 @@ export async function registerRoutes(
       });
     }
 
+    if (req.body.completed === true && !existingCard.completed && existingCard.assigneeId && existingCard.assigneeId !== req.user!.id) {
+      await storage.createNotification({
+        userId: existingCard.assigneeId,
+        type: "task_completed",
+        title: "Задача выполнена",
+        message: `Задача «${card.title}» отмечена как выполненная`,
+        boardId: list.boardId,
+        cardId: card.id,
+      });
+    }
+
     res.json(card);
   });
 
@@ -391,6 +422,41 @@ export async function registerRoutes(
     await storage.markAllNotificationsRead(req.user!.id);
     res.json({ ok: true });
   });
+
+  async function checkDeadlines() {
+    try {
+      const now = new Date();
+      const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      const cardsWithDeadlines = await storage.getCardsWithUpcomingDeadlines(now, in24h);
+
+      for (const card of cardsWithDeadlines) {
+        if (!card.assigneeId) continue;
+
+        const existing = await storage.getNotifications(card.assigneeId);
+        const alreadyNotified = existing.some(
+          (n) => n.type === "deadline_warning" && n.cardId === card.id &&
+            n.createdAt && (now.getTime() - new Date(n.createdAt).getTime()) < 12 * 60 * 60 * 1000
+        );
+        if (alreadyNotified) continue;
+
+        const deadlineDate = new Date(card.deadline!).toLocaleDateString("ru-RU");
+        const deadlineTime = new Date(card.deadline!).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+        await storage.createNotification({
+          userId: card.assigneeId,
+          type: "deadline_warning",
+          title: "Приближается дедлайн",
+          message: `Дедлайн задачи «${card.title}» на доске «${card.boardTitle}» — ${deadlineDate} в ${deadlineTime}`,
+          boardId: card.boardId,
+          cardId: card.id,
+        });
+      }
+    } catch (e) {
+      console.error("Deadline check error:", e);
+    }
+  }
+
+  setInterval(checkDeadlines, 30 * 60 * 1000);
+  setTimeout(checkDeadlines, 10 * 1000);
 
   return httpServer;
 }
