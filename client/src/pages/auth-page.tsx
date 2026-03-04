@@ -6,12 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { UserPlus, LogIn } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [role, setRole] = useState("преподаватель");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { login, register, user } = useAuth();
   const [, setLocation] = useLocation();
@@ -29,7 +31,7 @@ export default function AuthPage() {
       if (isLogin) {
         await login(username, password);
       } else {
-        await register(username, password, displayName);
+        await register(username, password, displayName, role);
       }
       setLocation("/");
     } catch (err: any) {
@@ -70,17 +72,31 @@ export default function AuthPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
-              <div className="space-y-2 animate-fade-in">
-                <Label htmlFor="displayName">Имя</Label>
-                <Input
-                  id="displayName"
-                  placeholder="Как вас зовут?"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  required={!isLogin}
-                  data-testid="input-display-name"
-                />
-              </div>
+              <>
+                <div className="space-y-2 animate-fade-in">
+                  <Label htmlFor="displayName">Имя</Label>
+                  <Input
+                    id="displayName"
+                    placeholder="Как вас зовут?"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    required={!isLogin}
+                    data-testid="input-display-name"
+                  />
+                </div>
+                <div className="space-y-2 animate-fade-in">
+                  <Label htmlFor="role">Роль</Label>
+                  <Select value={role} onValueChange={setRole}>
+                    <SelectTrigger data-testid="select-role">
+                      <SelectValue placeholder="Выберите роль" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="преподаватель">Преподаватель</SelectItem>
+                      <SelectItem value="начальник кафедры">Начальник кафедры</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
             )}
 
             <div className="space-y-2">

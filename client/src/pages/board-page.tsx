@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
-import type { Board, List, Card } from "@shared/schema";
+import type { Board, List, Card, User } from "@shared/schema";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,8 +15,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { BoardList } from "@/components/board-list";
 import { CardDetail } from "@/components/card-detail";
 import { InviteDialog } from "@/components/invite-dialog";
+import { NotificationsBell } from "@/components/notifications-bell";
 
-type ListWithCards = List & { cards: Card[] };
+type CardWithAssignee = Card & { assignee?: { id: string; displayName: string } | null };
+type ListWithCards = List & { cards: CardWithAssignee[] };
 
 export default function BoardPage() {
   const { id: boardId } = useParams<{ id: string }>();
@@ -24,7 +26,7 @@ export default function BoardPage() {
   const { toast } = useToast();
   const [newListTitle, setNewListTitle] = useState("");
   const [addingList, setAddingList] = useState(false);
-  const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+  const [selectedCard, setSelectedCard] = useState<CardWithAssignee | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
 
   const { data: board } = useQuery<Board>({
@@ -33,6 +35,10 @@ export default function BoardPage() {
 
   const { data: listsData, isLoading: listsLoading } = useQuery<ListWithCards[]>({
     queryKey: ["/api/boards", boardId, "lists"],
+  });
+
+  const { data: members } = useQuery<(User & { memberId: string })[]>({
+    queryKey: ["/api/boards", boardId, "members"],
   });
 
   const lists = listsData || [];
@@ -104,15 +110,18 @@ export default function BoardPage() {
           </Button>
           <h1 className="text-lg font-bold text-white truncate">{board?.title || "..."}</h1>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => setInviteOpen(true)}
-          data-testid="button-invite"
-        >
-          <UserPlus className="w-4 h-4 mr-1" />
-          <span className="hidden sm:inline">Пригласить</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <NotificationsBell />
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setInviteOpen(true)}
+            data-testid="button-invite"
+          >
+            <UserPlus className="w-4 h-4 mr-1" />
+            <span className="hidden sm:inline">Пригласить</span>
+          </Button>
+        </div>
       </header>
 
       <DragDropContext onDragEnd={onDragEnd}>
@@ -133,6 +142,7 @@ export default function BoardPage() {
                     cards={list.cards || []}
                     boardId={boardId!}
                     index={idx}
+                    members={members || []}
                     onCardClick={(card) => setSelectedCard(card)}
                   />
                 ))}
@@ -178,6 +188,7 @@ export default function BoardPage() {
         <CardDetail
           card={selectedCard}
           boardId={boardId!}
+          members={members || []}
           onClose={() => setSelectedCard(null)}
         />
       )}

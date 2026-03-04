@@ -21,6 +21,7 @@ declare global {
       username: string;
       displayName: string;
       password: string;
+      role: string;
     }
   }
 }
@@ -88,7 +89,7 @@ export async function registerRoutes(
 
   app.post("/api/auth/register", async (req, res) => {
     try {
-      const { username, password, displayName } = req.body;
+      const { username, password, displayName, role } = req.body;
       if (!username || !password || !displayName) {
         return res.status(400).json({ message: "Заполните все поля" });
       }
@@ -101,6 +102,7 @@ export async function registerRoutes(
         username,
         password: hashedPassword,
         displayName,
+        role: role || "преподаватель",
       });
       req.login(user, (err) => {
         if (err) return res.status(500).json({ message: "Ошибка входа" });
@@ -176,7 +178,14 @@ export async function registerRoutes(
     const isMember = await storage.isBoardMember(req.params.id, req.user!.id);
     if (!isMember) return res.status(403).json({ message: "Нет доступа" });
     const members = await storage.getBoardMembers(req.params.id);
+    const board = await storage.getBoard(req.params.id);
+    const owner = await storage.getUser(board!.ownerId);
+    const ownerSafe = owner ? { ...owner, memberId: "owner", password: undefined } : null;
     const safeMems = members.map(({ password: _, ...rest }) => rest);
+    if (ownerSafe && !safeMems.some(m => m.id === ownerSafe.id)) {
+      const { password: __, ...safeOwner } = owner!;
+      safeMems.unshift({ ...safeOwner, memberId: "owner" });
+    }
     res.json(safeMems);
   });
 
@@ -188,6 +197,16 @@ export async function registerRoutes(
     const user = await storage.getUserByUsername(username);
     if (!user) return res.status(404).json({ message: "Пользователь не найден" });
     await storage.addBoardMember(req.params.id, user.id);
+
+    const board = await storage.getBoard(req.params.id);
+    await storage.createNotification({
+      userId: user.id,
+      type: "board_invite",
+      title: "Приглашение на доску",
+      message: `Вас пригласили на доску «${board?.title}»`,
+      boardId: req.params.id,
+    });
+
     res.json({ ok: true });
   });
 
@@ -217,13 +236,33 @@ export async function registerRoutes(
   });
 
   app.post("/api/cards", requireAuth, async (req, res) => {
-    const { title, listId, position } = req.body;
+    const { title, listId, position, assigneeId, deadline } = req.body;
     if (!title || !listId) return res.status(400).json({ message: "Укажите название и список" });
     const list = await storage.getList(listId);
     if (!list) return res.status(404).json({ message: "Список не найден" });
     const isMember = await storage.isBoardMember(list.boardId, req.user!.id);
     if (!isMember) return res.status(403).json({ message: "Нет доступа" });
-    const card = await storage.createCard({ title, listId, position: position || 0 });
+    const card = await storage.createCard({
+      title,
+      listId,
+      position: position || 0,
+      assigneeId: assigneeId || null,
+      deadline: deadline ? new Date(deadline) : null,
+    });
+
+    if (assigneeId && assigneeId !== req.user!.id) {
+      const board = await storage.getBoard(list.boardId);
+      const deadlineStr = deadline ? ` (дедлайн: ${new Date(deadline).toLocaleDateString("ru-RU")})` : "";
+      await storage.createNotification({
+        userId: assigneeId,
+        type: "task_assigned",
+        title: "Новое задание",
+        message: `Вам назначена задача «${title}»${deadlineStr}`,
+        boardId: list.boardId,
+        cardId: card.id,
+      });
+    }
+
     res.json(card);
   });
 
@@ -234,7 +273,30 @@ export async function registerRoutes(
     if (!list) return res.status(404).json({ message: "Список не найден" });
     const isMember = await storage.isBoardMember(list.boardId, req.user!.id);
     if (!isMember) return res.status(403).json({ message: "Нет доступа" });
-    const card = await storage.updateCard(req.params.id, req.body);
+
+    const updateData: any = { ...req.body };
+    if (updateData.deadline) {
+      updateData.deadline = new Date(updateData.deadline);
+    }
+    if (updateData.deadline === null) {
+      updateData.deadline = null;
+    }
+
+    const card = await storage.updateCard(req.params.id, updateData);
+
+    if (req.body.assigneeId && req.body.assigneeId !== existingCard.assigneeId && req.body.assigneeId !== req.user!.id) {
+      const board = await storage.getBoard(list.boardId);
+      const deadlineStr = card.deadline ? ` (дедлайн: ${new Date(card.deadline).toLocaleDateString("ru-RU")})` : "";
+      await storage.createNotification({
+        userId: req.body.assigneeId,
+        type: "task_assigned",
+        title: "Новое задание",
+        message: `Вам назначена задача «${card.title}»${deadlineStr}`,
+        boardId: list.boardId,
+        cardId: card.id,
+      });
+    }
+
     res.json(card);
   });
 
@@ -292,6 +354,26 @@ export async function registerRoutes(
 
   app.delete("/api/checklist/:id", requireAuth, async (req, res) => {
     await storage.deleteChecklistItem(req.params.id);
+    res.json({ ok: true });
+  });
+
+  app.get("/api/notifications", requireAuth, async (req, res) => {
+    const notifs = await storage.getNotifications(req.user!.id);
+    res.json(notifs);
+  });
+
+  app.get("/api/notifications/unread-count", requireAuth, async (req, res) => {
+    const count = await storage.getUnreadNotificationCount(req.user!.id);
+    res.json({ count });
+  });
+
+  app.patch("/api/notifications/:id/read", requireAuth, async (req, res) => {
+    await storage.markNotificationRead(req.params.id);
+    res.json({ ok: true });
+  });
+
+  app.post("/api/notifications/read-all", requireAuth, async (req, res) => {
+    await storage.markAllNotificationsRead(req.user!.id);
     res.json({ ok: true });
   });
 

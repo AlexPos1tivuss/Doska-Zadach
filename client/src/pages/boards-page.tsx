@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, LayoutDashboard, LogOut, Trash2, Users } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { NotificationsBell } from "@/components/notifications-bell";
 
 const BOARD_COLORS = [
   "#a8d8ea", "#aa96da", "#fcbad3", "#ffffd2",
@@ -70,6 +72,14 @@ export default function BoardsPage() {
             <span className="text-sm text-muted-foreground hidden sm:inline">
               {user?.displayName}
             </span>
+            {user?.role && (
+              <Badge variant="outline" className="text-xs hidden sm:inline-flex" data-testid="text-user-role">
+                {user.role}
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <NotificationsBell />
             <Button variant="secondary" size="sm" onClick={logout} data-testid="button-logout">
               <LogOut className="w-4 h-4 mr-1" />
               Выйти

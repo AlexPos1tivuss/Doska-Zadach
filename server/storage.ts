@@ -1,10 +1,11 @@
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, desc } from "drizzle-orm";
 import { db } from "./db";
 import {
-  users, boards, boardMembers, lists, cards, checklistItems,
+  users, boards, boardMembers, lists, cards, checklistItems, notifications,
   type User, type InsertUser, type Board, type InsertBoard,
   type List, type InsertList, type Card, type InsertCard,
   type ChecklistItem, type InsertChecklistItem,
+  type Notification, type InsertNotification,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -23,7 +24,7 @@ export interface IStorage {
   removeBoardMember(memberId: string): Promise<void>;
   isBoardMember(boardId: string, userId: string): Promise<boolean>;
 
-  getListsWithCards(boardId: string): Promise<(List & { cards: Card[] })[]>;
+  getListsWithCards(boardId: string): Promise<(List & { cards: (Card & { assignee?: { id: string; displayName: string } | null })[] })[]>;
   createList(data: InsertList): Promise<List>;
   deleteList(id: string): Promise<void>;
 
@@ -37,6 +38,12 @@ export interface IStorage {
   createChecklistItem(data: InsertChecklistItem): Promise<ChecklistItem>;
   updateChecklistItem(id: string, data: Partial<ChecklistItem>): Promise<ChecklistItem>;
   deleteChecklistItem(id: string): Promise<void>;
+
+  getNotifications(userId: string): Promise<Notification[]>;
+  createNotification(data: InsertNotification): Promise<Notification>;
+  markNotificationRead(id: string): Promise<void>;
+  markAllNotificationsRead(userId: string): Promise<void>;
+  getUnreadNotificationCount(userId: string): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -99,6 +106,7 @@ export class DatabaseStorage implements IStorage {
         username: users.username,
         password: users.password,
         displayName: users.displayName,
+        role: users.role,
       })
       .from(boardMembers)
       .innerJoin(users, eq(boardMembers.userId, users.id))
@@ -134,7 +142,7 @@ export class DatabaseStorage implements IStorage {
     return list;
   }
 
-  async getListsWithCards(boardId: string): Promise<(List & { cards: Card[] })[]> {
+  async getListsWithCards(boardId: string): Promise<(List & { cards: (Card & { assignee?: { id: string; displayName: string } | null })[] })[]> {
     const boardLists = await db
       .select()
       .from(lists)
@@ -148,7 +156,19 @@ export class DatabaseStorage implements IStorage {
           .from(cards)
           .where(eq(cards.listId, list.id))
           .orderBy(asc(cards.position));
-        return { ...list, cards: listCards };
+
+        const cardsWithAssignee = await Promise.all(
+          listCards.map(async (card) => {
+            let assignee: { id: string; displayName: string } | null = null;
+            if (card.assigneeId) {
+              const [user] = await db.select({ id: users.id, displayName: users.displayName }).from(users).where(eq(users.id, card.assigneeId));
+              if (user) assignee = user;
+            }
+            return { ...card, assignee };
+          })
+        );
+
+        return { ...list, cards: cardsWithAssignee };
       })
     );
 
@@ -182,6 +202,8 @@ export class DatabaseStorage implements IStorage {
     if (data.completed !== undefined) updateData.completed = data.completed;
     if (data.position !== undefined) updateData.position = data.position;
     if (data.listId !== undefined) updateData.listId = data.listId;
+    if (data.assigneeId !== undefined) updateData.assigneeId = data.assigneeId;
+    if (data.deadline !== undefined) updateData.deadline = data.deadline;
 
     const [card] = await db.update(cards).set(updateData).where(eq(cards.id, id)).returning();
     return card;
@@ -235,6 +257,35 @@ export class DatabaseStorage implements IStorage {
 
   async deleteChecklistItem(id: string): Promise<void> {
     await db.delete(checklistItems).where(eq(checklistItems.id, id));
+  }
+
+  async getNotifications(userId: string): Promise<Notification[]> {
+    return db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt));
+  }
+
+  async createNotification(data: InsertNotification): Promise<Notification> {
+    const [notification] = await db.insert(notifications).values(data).returning();
+    return notification;
+  }
+
+  async markNotificationRead(id: string): Promise<void> {
+    await db.update(notifications).set({ read: true }).where(eq(notifications.id, id));
+  }
+
+  async markAllNotificationsRead(userId: string): Promise<void> {
+    await db.update(notifications).set({ read: true }).where(eq(notifications.userId, userId));
+  }
+
+  async getUnreadNotificationCount(userId: string): Promise<number> {
+    const result = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, userId), eq(notifications.read, false)));
+    return result.length;
   }
 }
 

@@ -7,7 +7,7 @@ type AuthContextType = {
   user: User | null;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<void>;
-  register: (username: string, password: string, displayName: string) => Promise<void>;
+  register: (username: string, password: string, displayName: string, role?: string) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -29,8 +29,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   const registerMutation = useMutation({
-    mutationFn: async ({ username, password, displayName }: { username: string; password: string; displayName: string }) => {
-      await apiRequest("POST", "/api/auth/register", { username, password, displayName });
+    mutationFn: async ({ username, password, displayName, role }: { username: string; password: string; displayName: string; role?: string }) => {
+      await apiRequest("POST", "/api/auth/register", { username, password, displayName, role });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
@@ -50,8 +50,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await loginMutation.mutateAsync({ username, password });
   }, [loginMutation]);
 
-  const register = useCallback(async (username: string, password: string, displayName: string) => {
-    await registerMutation.mutateAsync({ username, password, displayName });
+  const register = useCallback(async (username: string, password: string, displayName: string, role?: string) => {
+    await registerMutation.mutateAsync({ username, password, displayName, role });
   }, [registerMutation]);
 
   const logout = useCallback(async () => {

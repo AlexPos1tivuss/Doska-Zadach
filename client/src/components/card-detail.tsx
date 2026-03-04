@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Card, ChecklistItem } from "@shared/schema";
+import type { Card, ChecklistItem, User } from "@shared/schema";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Plus, FileText, Tag, ListChecks, X } from "lucide-react";
+import { Trash2, Plus, FileText, Tag, ListChecks, X, Clock, UserCircle } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const AVAILABLE_LABELS = ["Срочно", "Важно", "В процессе", "Готово", "Идея", "Баг"];
 const LABEL_COLORS: Record<string, string> = {
@@ -22,16 +23,42 @@ const LABEL_COLORS: Record<string, string> = {
   "Баг": "#ef5350",
 };
 
+type CardWithAssignee = Card & { assignee?: { id: string; displayName: string } | null };
+
 interface CardDetailProps {
-  card: Card;
+  card: CardWithAssignee;
   boardId: string;
+  members: (User & { memberId: string })[];
   onClose: () => void;
 }
 
-export function CardDetail({ card, boardId, onClose }: CardDetailProps) {
+function formatDateForInput(date: Date | string | null): string {
+  if (!date) return "";
+  const d = new Date(date);
+  return d.toISOString().split("T")[0];
+}
+
+function getDeadlineStatus(deadline: Date | string | null): { text: string; className: string } | null {
+  if (!deadline) return null;
+  const d = new Date(deadline);
+  const now = new Date();
+  const diff = d.getTime() - now.getTime();
+  const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+  const dateStr = d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+
+  if (days < 0) return { text: `Просрочено (${dateStr})`, className: "text-red-500" };
+  if (days === 0) return { text: `Сегодня (${dateStr})`, className: "text-orange-500" };
+  if (days === 1) return { text: `Завтра (${dateStr})`, className: "text-orange-500" };
+  if (days <= 3) return { text: `Через ${days} дн. (${dateStr})`, className: "text-yellow-600" };
+  return { text: dateStr, className: "text-muted-foreground" };
+}
+
+export function CardDetail({ card, boardId, members, onClose }: CardDetailProps) {
   const [title, setTitle] = useState(card.title);
   const [description, setDescription] = useState(card.description || "");
   const [labels, setLabels] = useState<string[]>((card.labels as string[]) || []);
+  const [assigneeId, setAssigneeId] = useState<string>(card.assigneeId || "");
+  const [deadline, setDeadline] = useState(formatDateForInput(card.deadline));
   const [newCheckItem, setNewCheckItem] = useState("");
   const { toast } = useToast();
 
@@ -40,7 +67,7 @@ export function CardDetail({ card, boardId, onClose }: CardDetailProps) {
   });
 
   const updateCardMutation = useMutation({
-    mutationFn: async (data: Partial<Card>) => {
+    mutationFn: async (data: Partial<Card> & { assigneeId?: string | null; deadline?: string | null }) => {
       await apiRequest("PATCH", `/api/cards/${card.id}`, data);
     },
     onSuccess: () => {
@@ -104,6 +131,17 @@ export function CardDetail({ card, boardId, onClose }: CardDetailProps) {
     updateCardMutation.mutate({ labels: newLabels });
   };
 
+  const handleAssigneeChange = (value: string) => {
+    const newValue = value === "none" ? "" : value;
+    setAssigneeId(newValue);
+    updateCardMutation.mutate({ assigneeId: newValue || null });
+  };
+
+  const handleDeadlineChange = (value: string) => {
+    setDeadline(value);
+    updateCardMutation.mutate({ deadline: value || null });
+  };
+
   const handleAddCheckItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCheckItem.trim()) return;
@@ -113,6 +151,7 @@ export function CardDetail({ card, boardId, onClose }: CardDetailProps) {
   const checkedCount = checklistItems?.filter((i) => i.checked).length || 0;
   const totalCount = checklistItems?.length || 0;
   const progress = totalCount > 0 ? (checkedCount / totalCount) * 100 : 0;
+  const deadlineStatus = getDeadlineStatus(card.deadline);
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -145,6 +184,46 @@ export function CardDetail({ card, boardId, onClose }: CardDetailProps) {
               className="resize-none min-h-[80px]"
               data-testid="input-card-description"
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <UserCircle className="w-4 h-4" />
+                Исполнитель
+              </Label>
+              <Select value={assigneeId || "none"} onValueChange={handleAssigneeChange}>
+                <SelectTrigger data-testid="select-card-assignee">
+                  <SelectValue placeholder="Назначить..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Без исполнителя</SelectItem>
+                  {members.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Clock className="w-4 h-4" />
+                Дедлайн
+              </Label>
+              <Input
+                type="date"
+                value={deadline}
+                onChange={(e) => handleDeadlineChange(e.target.value)}
+                data-testid="input-card-deadline"
+              />
+              {deadlineStatus && (
+                <p className={`text-xs ${deadlineStatus.className}`} data-testid="text-deadline-status">
+                  {deadlineStatus.text}
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="space-y-2">

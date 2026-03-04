@@ -8,6 +8,7 @@ export const users = pgTable("users", {
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
   displayName: text("display_name").notNull(),
+  role: text("role").notNull().default("преподаватель"),
 });
 
 export const boards = pgTable("boards", {
@@ -38,6 +39,8 @@ export const cards = pgTable("cards", {
   position: integer("position").notNull().default(0),
   labels: jsonb("labels").$type<string[]>().default([]),
   completed: boolean("completed").notNull().default(false),
+  assigneeId: varchar("assignee_id").references(() => users.id),
+  deadline: timestamp("deadline"),
 });
 
 export const checklistItems = pgTable("checklist_items", {
@@ -48,10 +51,23 @@ export const checklistItems = pgTable("checklist_items", {
   position: integer("position").notNull().default(0),
 });
 
+export const notifications = pgTable("notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  read: boolean("read").notNull().default(false),
+  boardId: varchar("board_id").references(() => boards.id, { onDelete: "cascade" }),
+  cardId: varchar("card_id").references(() => cards.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
   displayName: true,
+  role: true,
 });
 
 export const loginSchema = z.object({
@@ -63,6 +79,7 @@ export const registerSchema = z.object({
   username: z.string().min(3, "Минимум 3 символа"),
   password: z.string().min(4, "Минимум 4 символа"),
   displayName: z.string().min(1, "Укажите имя"),
+  role: z.string().optional(),
 });
 
 export const insertBoardSchema = createInsertSchema(boards).pick({
@@ -82,12 +99,23 @@ export const insertCardSchema = createInsertSchema(cards).pick({
   position: true,
   description: true,
   labels: true,
+  assigneeId: true,
+  deadline: true,
 });
 
 export const insertChecklistItemSchema = createInsertSchema(checklistItems).pick({
   cardId: true,
   text: true,
   position: true,
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications).pick({
+  userId: true,
+  type: true,
+  title: true,
+  message: true,
+  boardId: true,
+  cardId: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -101,3 +129,5 @@ export type Card = typeof cards.$inferSelect;
 export type InsertCard = z.infer<typeof insertCardSchema>;
 export type ChecklistItem = typeof checklistItems.$inferSelect;
 export type InsertChecklistItem = z.infer<typeof insertChecklistItemSchema>;
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
