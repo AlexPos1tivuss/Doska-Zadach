@@ -78,6 +78,7 @@ id          UUID (PK, автогенерация)
 username    string, уникальный логин
 password    string, хэш bcrypt
 displayName string, отображаемое имя
+role        string, роль ("преподаватель" | "начальник кафедры")
 ```
 
 ### Board — Доска
@@ -113,6 +114,8 @@ listId      UUID → lists.id (cascade delete)
 position    integer, порядок внутри списка
 labels      JSONB (string[]), цветные метки
 completed   boolean, выполнена ли задача
+assigneeId  UUID → users.id, исполнитель (nullable)
+deadline    timestamp, дедлайн (nullable)
 ```
 
 ### ChecklistItem — Пункт чеклиста
@@ -124,17 +127,33 @@ checked  boolean, отмечен ли
 position integer, порядок
 ```
 
+### Notification — Уведомление
+```
+id        UUID (PK)
+userId    UUID → users.id (cascade delete)
+type      string, тип ("task_assigned" | "board_invite" | "deadline_warning" | "board_joined")
+title     string, заголовок
+message   string, текст уведомления
+read      boolean, прочитано ли
+boardId   UUID → boards.id (cascade, nullable)
+cardId    UUID → cards.id (cascade, nullable)
+createdAt timestamp, время создания
+```
+
 ---
 
 ## Схема базы данных
 
 ```
 users
-  └─< boards (ownerId)
-        └─< board_members (boardId) >─ users
-        └─< lists (boardId)
-              └─< cards (listId)
-                    └─< checklist_items (cardId)
+  ├─< boards (ownerId)
+  │     ├─< board_members (boardId) >─ users
+  │     ├─< lists (boardId)
+  │     │     └─< cards (listId)
+  │     │           ├── assigneeId → users
+  │     │           └─< checklist_items (cardId)
+  │     └─< notifications (boardId)
+  └─< notifications (userId)
 ```
 
 Все дочерние таблицы используют `CASCADE DELETE` — при удалении доски удаляются все её списки, карточки и пункты чеклистов.

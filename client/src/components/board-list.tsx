@@ -103,7 +103,7 @@ export function BoardList({ list, cards, boardId, index, members, onCardClick }:
     if (!newCardTitle.trim()) return;
     createCardMutation.mutate({
       title: newCardTitle,
-      assigneeId: newCardAssignee || undefined,
+      assigneeId: newCardAssignee && newCardAssignee !== "none" ? newCardAssignee : undefined,
       deadline: newCardDeadline || undefined,
     });
   };

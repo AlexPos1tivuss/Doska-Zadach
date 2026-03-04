@@ -1,23 +1,24 @@
-# ТрелоПародия (Trello Parody) - replit.md
+# Менеджер задач - replit.md
 
 ## Overview
 
-ТрелоПародия is a Russian-language Trello-like task management web application. It allows users to create boards, organize tasks into lists (columns), and manage cards with descriptions, labels, and checklists. Key features include:
+Russian-language Trello-like task management web application. Users can create boards, organize tasks into lists (columns), and manage cards with descriptions, labels, checklists, assignees, and deadlines. Key features:
 
-- User authentication (register/login)
+- User authentication (register/login) with roles (Преподаватель, Начальник кафедры)
 - Multiple boards per user with custom colors
-- Drag-and-drop reordering of lists and cards
-- Card detail view with descriptions, labels, and checklist items
+- Drag-and-drop reordering of cards between lists
+- Card detail view with descriptions, labels, checklist items, assignee picker, and deadline
 - Board membership/collaboration (invite users to boards)
+- In-app notifications (task assignment, board invitations, deadline warnings)
 - Confetti animation on card completion
 
-The app is a full-stack TypeScript monorepo with a React frontend and an Express backend, connected to a PostgreSQL database via Drizzle ORM.
+Full-stack TypeScript monorepo: React frontend + Express backend + PostgreSQL via Drizzle ORM.
 
 ---
 
 ## User Preferences
 
-Preferred communication style: Simple, everyday language.
+Preferred communication style: Simple, everyday language. All UI in Russian.
 
 ---
 
@@ -27,91 +28,48 @@ Preferred communication style: Simple, everyday language.
 
 - **Framework**: React 18 with TypeScript, built with Vite
 - **Routing**: `wouter` (lightweight client-side routing)
-- **State/Data Fetching**: TanStack React Query v5 for server state, with a custom `queryClient` and `apiRequest` helper
-- **Auth State**: React Context (`AuthProvider` in `client/src/lib/auth.tsx`) wrapping the whole app; auth state is derived from a `/api/auth/me` query
-- **UI Components**: shadcn/ui (New York style) using Radix UI primitives + Tailwind CSS
-- **Drag and Drop**: `@hello-pangea/dnd` for list and card reordering
-- **Theming**: CSS custom properties for both light and dark mode, defined in `index.css`; Tailwind is configured to use these variables
-- **Notifications**: Custom `useToast` hook + Radix Toast
+- **State/Data Fetching**: TanStack React Query v5
+- **Auth State**: React Context (`AuthProvider` in `client/src/lib/auth.tsx`)
+- **UI Components**: shadcn/ui (Radix UI) + Tailwind CSS
+- **Drag and Drop**: `@hello-pangea/dnd`
 - **Key Pages**:
-  - `/` → BoardsPage (list of boards)
-  - `/board/:id` → BoardPage (lists and cards for a board)
-  - `/auth` → AuthPage (login/register)
-- **Protected Routes**: A `ProtectedRoute` wrapper redirects unauthenticated users to the auth page
+  - `/` → BoardsPage (list of boards, notification bell, user role badge)
+  - `/board/:id` → BoardPage (lists and cards, notification bell)
+  - `/auth` → AuthPage (login/register with role selection)
+- **Key Components**:
+  - `notifications-bell.tsx` — notification popover with unread count badge, polling every 15s
+  - `board-list.tsx` — list column with card creation form (assignee + deadline fields)
+  - `card-detail.tsx` — card dialog with assignee/deadline pickers, labels, checklist
+  - `invite-dialog.tsx` — invite users by username
 
 ### Backend Architecture
 
 - **Framework**: Express.js with TypeScript, run via `tsx`
-- **Entry Point**: `server/index.ts` creates the HTTP server, registers routes, and serves static files in production or proxies to Vite in development
-- **Routes**: Defined in `server/routes.ts`; all API routes are under `/api/`
-- **Authentication**: Passport.js with `passport-local` strategy; sessions stored in PostgreSQL using `connect-pg-simple`
-- **Password Hashing**: `bcrypt`
-- **Session**: `express-session` with a PostgreSQL session store; secret from `SESSION_SECRET` env var
-- **Storage Layer**: `server/storage.ts` exports a `DatabaseStorage` class implementing an `IStorage` interface — all database interactions go through this abstraction
-- **Middleware**: JSON body parsing with raw body capture (for potential webhook use), URL-encoded parsing, request logging
+- **Routes**: `server/routes.ts`; all API routes under `/api/`
+- **Authentication**: Passport.js with `passport-local`; sessions in PostgreSQL via `connect-pg-simple`
+- **Storage Layer**: `server/storage.ts` — `DatabaseStorage` class implementing `IStorage` interface
+- **Notifications**: Created server-side on key events (task assignment, board invite); polled by frontend
 
 ### Data Storage
 
-- **Database**: PostgreSQL
-- **ORM**: Drizzle ORM (`drizzle-orm/node-postgres`) with schema defined in `shared/schema.ts`
-- **Schema Tables**:
-  - `users` — id (UUID), username, password (hashed), displayName
-  - `boards` — id, title, ownerId (FK → users), color
-  - `board_members` — id, boardId (FK → boards, cascade delete), userId (FK → users)
-  - `lists` — id, title, boardId (FK → boards, cascade delete), position
-  - `cards` — id, title, description, listId (FK → lists, cascade delete), position, labels (JSONB array), completed
-  - `checklist_items` — id, cardId (FK → cards, cascade delete), text, checked, position
-- **Migrations**: Drizzle Kit with `drizzle.config.ts`; `npm run db:push` applies schema
-- **Connection**: Via `DATABASE_URL` environment variable
+- **Database**: PostgreSQL via Drizzle ORM
+- **Schema Tables** (defined in `shared/schema.ts`):
+  - `users` — id (UUID), username, password (bcrypt), displayName, **role** (text, default "преподаватель")
+  - `boards` — id, title, ownerId → users, color
+  - `board_members` — id, boardId → boards (cascade), userId → users
+  - `lists` — id, title, boardId → boards (cascade), position
+  - `cards` — id, title, description, listId → lists (cascade), position, labels (JSONB), completed, **assigneeId** → users, **deadline** (timestamp)
+  - `checklist_items` — id, cardId → cards (cascade), text, checked, position
+  - `notifications` — id, userId → users (cascade), type, title, message, read, boardId → boards (cascade), cardId → cards (cascade), createdAt
 
-### Shared Code
-
-- `shared/schema.ts` is shared between the frontend (for TypeScript types) and backend (for database queries and Zod validation schemas via `drizzle-zod`)
-- TypeScript path alias `@shared/*` maps to `./shared/*`
-
-### Build System
-
-- **Development**: `tsx server/index.ts` runs the server; Vite dev server runs as middleware (via `server/vite.ts`) with HMR
-- **Production Build**: Custom `script/build.ts` runs Vite for the client (output to `dist/public`) and esbuild for the server (output to `dist/index.cjs`), bundling a specific allowlist of server dependencies for faster cold starts
-- **Client alias `@`** maps to `client/src/`
+### Notification Types
+- `task_assigned` — when a task is assigned to a user
+- `board_invite` — when a user is invited to a board
+- `deadline_warning` — for upcoming deadlines
+- `board_joined` — when someone joins a board
 
 ---
 
-## External Dependencies
-
-### Core Runtime Dependencies
-| Package | Purpose |
-|---|---|
-| `express` | HTTP server framework |
-| `passport` + `passport-local` | Authentication strategy |
-| `bcrypt` | Password hashing |
-| `express-session` | Session management |
-| `connect-pg-simple` | PostgreSQL session store |
-| `drizzle-orm` + `pg` | PostgreSQL ORM and driver |
-| `zod` + `drizzle-zod` | Schema validation |
-| `@hello-pangea/dnd` | Drag-and-drop UI |
-| `@tanstack/react-query` | Server state management |
-| `wouter` | Client-side routing |
-| `canvas-confetti` | Celebration animation on card completion |
-
-### UI Libraries
-| Package | Purpose |
-|---|---|
-| All `@radix-ui/react-*` packages | Accessible UI primitives |
-| `tailwindcss` | Utility-first CSS |
-| `class-variance-authority` | Component variant styling |
-| `clsx` + `tailwind-merge` | Class name utilities |
-| `lucide-react` | Icon set |
-
-### Development / Build Tools
-| Package | Purpose |
-|---|---|
-| `vite` + `@vitejs/plugin-react` | Frontend bundler |
-| `esbuild` | Server bundler for production |
-| `tsx` | TypeScript execution for dev server |
-| `drizzle-kit` | Database migrations CLI |
-| `@replit/vite-plugin-*` | Replit-specific dev tooling (cartographer, dev banner, runtime error modal) |
-
-### Environment Variables Required
-- `DATABASE_URL` — PostgreSQL connection string (required; app throws on startup without it)
-- `SESSION_SECRET` — Session signing secret (falls back to a hardcoded default if not set; should be set in production)
+## Environment Variables
+- `DATABASE_URL` — PostgreSQL connection string (required)
+- `SESSION_SECRET` — Session signing secret

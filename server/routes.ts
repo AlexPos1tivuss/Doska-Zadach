@@ -87,12 +87,15 @@ export async function registerRoutes(
     }
   });
 
+  const ALLOWED_ROLES = ["преподаватель", "начальник кафедры"];
+
   app.post("/api/auth/register", async (req, res) => {
     try {
       const { username, password, displayName, role } = req.body;
       if (!username || !password || !displayName) {
         return res.status(400).json({ message: "Заполните все поля" });
       }
+      const validRole = ALLOWED_ROLES.includes(role) ? role : "преподаватель";
       const existing = await storage.getUserByUsername(username);
       if (existing) {
         return res.status(400).json({ message: "Пользователь уже существует" });
@@ -102,7 +105,7 @@ export async function registerRoutes(
         username,
         password: hashedPassword,
         displayName,
-        role: role || "преподаватель",
+        role: validRole,
       });
       req.login(user, (err) => {
         if (err) return res.status(500).json({ message: "Ошибка входа" });
@@ -242,6 +245,10 @@ export async function registerRoutes(
     if (!list) return res.status(404).json({ message: "Список не найден" });
     const isMember = await storage.isBoardMember(list.boardId, req.user!.id);
     if (!isMember) return res.status(403).json({ message: "Нет доступа" });
+    if (assigneeId) {
+      const assigneeIsMember = await storage.isBoardMember(list.boardId, assigneeId);
+      if (!assigneeIsMember) return res.status(400).json({ message: "Исполнитель не является участником доски" });
+    }
     const card = await storage.createCard({
       title,
       listId,
@@ -273,6 +280,11 @@ export async function registerRoutes(
     if (!list) return res.status(404).json({ message: "Список не найден" });
     const isMember = await storage.isBoardMember(list.boardId, req.user!.id);
     if (!isMember) return res.status(403).json({ message: "Нет доступа" });
+
+    if (req.body.assigneeId) {
+      const assigneeIsMember = await storage.isBoardMember(list.boardId, req.body.assigneeId);
+      if (!assigneeIsMember) return res.status(400).json({ message: "Исполнитель не является участником доски" });
+    }
 
     const updateData: any = { ...req.body };
     if (updateData.deadline) {
@@ -368,6 +380,9 @@ export async function registerRoutes(
   });
 
   app.patch("/api/notifications/:id/read", requireAuth, async (req, res) => {
+    const notifs = await storage.getNotifications(req.user!.id);
+    const owns = notifs.some(n => n.id === req.params.id);
+    if (!owns) return res.status(403).json({ message: "Нет доступа" });
     await storage.markNotificationRead(req.params.id);
     res.json({ ok: true });
   });
