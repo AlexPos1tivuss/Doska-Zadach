@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Notification } from "@shared/schema";
@@ -28,8 +28,31 @@ function formatTimeAgo(date: Date): string {
   return new Date(date).toLocaleDateString("ru-RU");
 }
 
+function requestBrowserPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+}
+
+function showBrowserNotification(title: string, body: string) {
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification(title, {
+      body,
+      icon: "/favicon.ico",
+      lang: "ru",
+    });
+  }
+}
+
 export function NotificationsBell() {
   const [open, setOpen] = useState(false);
+  const prevCountRef = useRef<number | null>(null);
+  const shownIdsRef = useRef<Set<string>>(new Set());
+  const isFirstFetchRef = useRef(true);
+
+  useEffect(() => {
+    requestBrowserPermission();
+  }, []);
 
   const { data: unreadData } = useQuery<{ count: number }>({
     queryKey: ["/api/notifications/unread-count"],
@@ -40,6 +63,39 @@ export function NotificationsBell() {
     queryKey: ["/api/notifications"],
     enabled: open,
   });
+
+  useEffect(() => {
+    const currentCount = unreadData?.count ?? 0;
+
+    if (isFirstFetchRef.current && unreadData !== undefined) {
+      isFirstFetchRef.current = false;
+      prevCountRef.current = currentCount;
+      return;
+    }
+
+    if (
+      unreadData !== undefined &&
+      prevCountRef.current !== null &&
+      currentCount > prevCountRef.current
+    ) {
+      apiRequest("GET", "/api/notifications")
+        .then((res) => res.json())
+        .then((notifs: Notification[]) => {
+          const unread = notifs.filter((n) => !n.read);
+          for (const notif of unread) {
+            if (!shownIdsRef.current.has(notif.id)) {
+              shownIdsRef.current.add(notif.id);
+              showBrowserNotification(notif.title, notif.message);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+
+    if (unreadData !== undefined) {
+      prevCountRef.current = currentCount;
+    }
+  }, [unreadData]);
 
   const markReadMutation = useMutation({
     mutationFn: async (id: string) => {
